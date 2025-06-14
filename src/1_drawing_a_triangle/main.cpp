@@ -101,6 +101,7 @@ private:
         pickPhysicalDevice(); // 选择符合要求，具有指定QueeueFamily的物理设备，由physicalDevice存储
         createLogicalDevice();
         createSwapChain();
+        createImageViews();
     }
 
     void createInstance() {
@@ -486,7 +487,7 @@ private:
         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
         if (VK_SUCCESS != vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain)) {
-            std::cerr << "failed to create swapchain!" << std::endl;
+            throw std::runtime_error("failed to create swapchain!");
         }
 
         vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
@@ -497,6 +498,33 @@ private:
         swapChainExtent = extent;
     }
 
+    void createImageViews() {
+        swapChainImageViews.resize(swapChainImages.size());
+        for (size_t i = 0; i < swapChainImages.size(); ++i) {
+            VkImageViewCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            createInfo.image = swapChainImages[i];
+            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // 将图像视为2D数据
+            createInfo.format = swapChainImageFormat; // 作为2D数据的资源以什么样的格式解读
+            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // 各个通道处理方式
+            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            // subresourceRange描述了视图索引的资源的范围
+            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // 影响颜色数据
+            createInfo.subresourceRange.baseMipLevel = 0; // mipmap从第0层开始
+            createInfo.subresourceRange.levelCount = 1; // 总共的mipmap层级数量为1
+            createInfo.subresourceRange.baseArrayLayer = 0; // 图像layer从0开始
+            createInfo.subresourceRange.layerCount = 1; // 总共的layer数量为1
+
+            if (VK_SUCCESS !=
+                vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i])
+            ) {
+                throw std::runtime_error("failed to create image view!");
+            }
+        }
+    }
+
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -504,6 +532,9 @@ private:
     }
 
     void cleanup() {
+        for (auto imageView : swapChainImageViews) {
+            vkDestroyImageView(device, imageView, nullptr);
+        }
         vkDestroySwapchainKHR(device, swapChain, nullptr);
         vkDestroyDevice(device, nullptr);
         if (enableValidationLayers) {
@@ -541,6 +572,7 @@ private:
 
     VkSwapchainKHR swapChain;
     std::vector<VkImage> swapChainImages;
+    std::vector<VkImageView> swapChainImageViews; // 视图指定了如何查看图像的方式，如区域、读取方式等
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
 };
