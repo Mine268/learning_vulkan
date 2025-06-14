@@ -100,6 +100,7 @@ private:
         createSurface(); // 创建呈现句柄
         pickPhysicalDevice(); // 选择符合要求，具有指定QueeueFamily的物理设备，由physicalDevice存储
         createLogicalDevice();
+        createSwapChain();
     }
 
     void createInstance() {
