@@ -106,6 +106,8 @@ private:
         createRenderPass();
         createGraphicsPipeline();
         createFramebuffers();
+        createCommandPool();
+        createCommandBuffer();
     }
 
     void createInstance() {
@@ -767,13 +769,104 @@ private:
         }
     }
 
+    void createCommandPool() {
+        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+        // 创建图形指令池，用于创建图形指令buffer
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // 指令池允许独立记录命令
+        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+        if (VK_SUCCESS != vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool)) {
+            throw std::runtime_error("failed to create command pool!");
+        }
+    }
+
+    void createCommandBuffer() {
+        VkCommandBufferAllocateInfo allocInfo{}; // 不是CreateInfo
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool;
+        // PRIMARY 一级队列，直接提交，不能够被其他的command buffer调用
+        // SECDONDARY 不能直接提交，能够被其他队列调用
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+
+        if (VK_SUCCESS != vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer)) {
+            throw std::runtime_error("failed to create command buffers!");
+        }
+    }
+
+    /**
+     * imageIndex：要写入的交换链中的图像的索引
+     */
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0; // 指令开始时的buffer的行为，先用不到
+        beginInfo.pInheritanceInfo = nullptr;
+        // 如果buffer已经存在，则会默认重置buffer
+        if (VK_SUCCESS != vkBeginCommandBuffer(commandBuffer, &beginInfo)) {
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        // 开始render pass
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+        renderPassInfo.renderArea.offset = {0, 0}; // 要渲染的区域
+        renderPassInfo.renderArea.extent = swapChainExtent;
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // VK_ATTACHMENT_LOAD_OP_CLEAR
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        // render pass启动之后，绑定到pipeline
+        // 需要指定传入的pipeline是图形pipeline
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        // 动态viewport
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChainExtent.width);
+        viewport.height= static_cast<float>(swapChainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapChainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        // 绘制三角形
+        // 3 - 总共3个顶点要绘制
+        // 1 - 没有用到，设置为1
+        // 0 - gl_VertexIndex的最小值
+        // 0 - 没用到，是gl_InstanceIndex的最小值
+        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+        // 结束render pass
+        vkCmdEndRenderPass(commandBuffer);
+
+        if (VK_SUCCESS != vkEndCommandBuffer(commandBuffer)) {
+            throw std::runtime_error("failed to record command buffer");
+        }
+    }
+
+    void drawFrame() {
+        ;
+    }
+
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            drawFrame();
         }
     }
 
     void cleanup() {
+        vkDestroyCommandPool(device, commandPool, nullptr);
         for (auto framebuffer : swapChainFramebuffers) {
             vkDestroyFramebuffer(device, framebuffer, nullptr);
         }
@@ -844,6 +937,13 @@ private:
     VkPipeline graphicsPipeline;
 
     std::vector<VkFramebuffer> swapChainFramebuffers; // 使用framebuffer对imageview进行操作
+
+    VkCommandPool commandPool;
+    VkCommandBuffer commandBuffer;
+
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkFence inFlightFence;
 };
 
 int main() {
@@ -851,7 +951,7 @@ int main() {
 
     try {
         app.run();
-    } catch(const std::exception& e) {
+    } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
     }
