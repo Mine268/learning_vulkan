@@ -103,6 +103,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createRenderPass();
         createGraphicsPipeline();
     }
 
@@ -645,7 +646,7 @@ private:
         colorBlending.blendConstants[2] = 0.0f;
         colorBlending.blendConstants[3] = 0.0f;
 
-        // 管线layout
+        // 管线layout：用于管理传入的uniform和push
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 0;
@@ -656,6 +657,33 @@ private:
             vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout)
         ) {
             throw std::runtime_error("failed to create pipeline layout!");
+        }
+
+        // 创建管线
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2; // vert+frag
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = nullptr;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = pipelineLayout;
+        pipelineInfo.renderPass = renderPass;
+        pipelineInfo.subpass = 0; // 索引向这个renderPass中的具体哪一个subpass
+        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // 从老的pipeline中创建
+        pipelineInfo.basePipelineIndex = -1;
+
+        if (VK_SUCCESS !=
+            vkCreateGraphicsPipelines(
+                device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline
+            )
+        ) {
+            throw std::runtime_error("failed to create graphics pipeline!");
         }
 
         // 管线会维护自己的shader module
@@ -677,6 +705,42 @@ private:
         return shaderModule;
     }
 
+    void createRenderPass() {
+        // render pass定义了具体怎么进行渲染，比如说渲染的流程
+        // Attachment是用于渲染的图像数据，描述符告诉了Vulkan怎么预处理和后处理这个数据
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapChainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // 渲染开始时清空framebuffer原有内容
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // 渲染结束后覆盖framebuffer
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // 输入图像的格式
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // 输出图像用于呈现
+        // 使用ref引用具体的attachment
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0; // 索引唯一的attachment
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        // 一个render pass包含数个子过程
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; // 指定为图形subpass
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef; // 与shader里面的layout(location=?)对应
+
+        // 创建render pass
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+
+        if (VK_SUCCESS != vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass)) {
+            throw std::runtime_error("failed to create render pass!");
+        }
+    }
+
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -684,7 +748,9 @@ private:
     }
 
     void cleanup() {
+        vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        vkDestroyRenderPass(device, renderPass, nullptr);
         for (auto imageView : swapChainImageViews) {
             vkDestroyImageView(device, imageView, nullptr);
         }
@@ -744,7 +810,9 @@ private:
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
 
+    VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout; // 管线layout，用于指定uniform
+    VkPipeline graphicsPipeline;
 };
 
 int main() {
