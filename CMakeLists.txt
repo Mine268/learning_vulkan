@@ -8,6 +8,17 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Vulkan REQUIRED)
 include_directories(${Vulkan_INCLUDE_DIRS})
 
+# glslc
+find_program(
+    GLSL_COMPILER glslc
+    HITNS "$ENV{VULKAN_SDK}/bin"
+)
+if(NOT GLSL_COMPILER)
+    message(FATAL_ERROR "Cannot find glslc")
+else()
+    message("Found glslc")
+endif()
+
 # glfw
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
