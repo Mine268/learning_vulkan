@@ -94,6 +94,8 @@ private:
         // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // 不要支持窗口大小改变
 
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+        glfwSetWindowUserPointer(window, this);
+        glfwSetFramebufferSizeCallback(window, framebufferResizedCallback);
     }
 
     void initVulkan() {
@@ -953,10 +955,12 @@ private:
 
         result = vkQueuePresentKHR(graphicsQueue, &presentInfo);
         // 如果交换链不再适合，立刻重建
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-            recreateSwapChain();
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+            frameBufferResized) {
+          frameBufferResized = false;
+          recreateSwapChain();
         } else if (result != VK_SUCCESS) {
-            throw std::runtime_error("failed to present swap chain image!");
+          throw std::runtime_error("failed to present swap chain image!");
         }
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -973,6 +977,13 @@ private:
     }
 
     void recreateSwapChain() {
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(window, &width, &height);
+        while (width == 0 || height == 0) {
+            glfwGetFramebufferSize(window, &width, &height);
+            glfwWaitEvents();
+        }
+
         vkDeviceWaitIdle(device);
 
         cleanupSwapChain();
@@ -1038,6 +1049,11 @@ private:
         return buffer;
     }
 
+    static void framebufferResizedCallback(GLFWwindow* window, int width, int height) {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->frameBufferResized = true;
+    }
+
 private:
     GLFWwindow* window; // glfw窗口指针
 
@@ -1070,6 +1086,8 @@ private:
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
+
+    bool frameBufferResized = false;
 };
 
 int main() {
