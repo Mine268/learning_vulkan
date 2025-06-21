@@ -33,3 +33,6 @@ add_subdirectory("src/0_setup_environment/")
 
 # 1. drawing a triangle
 add_subdirectory("src/1_drawing_a_triangle")
+
+# 2. vertex buffers
+add_subdirectory("src/2_vertex_buffers")

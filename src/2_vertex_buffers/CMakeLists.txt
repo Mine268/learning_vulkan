@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(1_drawing_a_triangle)
+project(2_vertex_buffers)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -27,19 +27,19 @@ foreach(shader ${SHADER_SOURCES})
     list(APPEND SHADER_SPV_FILES ${output_file})
 endforeach()
 
-add_custom_target(compile_shaders_drawing_a_triangle ALL
+add_custom_target(compile_shaders_vertex_buffers ALL
     DEPENDS ${SHADER_SPV_FILES}
     COMMENT "Building all shaders"
 )
 
 # executable
-add_executable(main_drawing_a_triangle main.cpp)
-add_dependencies(main_drawing_a_triangle compile_shaders_drawing_a_triangle)
-target_link_libraries(main_drawing_a_triangle PRIVATE
+add_executable(main_vertex_buffers main.cpp)
+add_dependencies(main_vertex_buffers compile_shaders_vertex_buffers)
+target_link_libraries(main_vertex_buffers PRIVATE
     glm::glm
     glfw
     ${Vulkan_LIBRARIES}
 )
-target_include_directories(main_drawing_a_triangle PRIVATE
+target_include_directories(main_vertex_buffers PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/shaders
 )
