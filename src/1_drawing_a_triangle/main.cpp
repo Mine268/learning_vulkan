@@ -15,6 +15,7 @@
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -107,7 +108,7 @@ private:
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPool();
-        createCommandBuffer();
+        createCommandBuffers();
         createSyncObjects();
     }
 
@@ -796,16 +797,18 @@ private:
         }
     }
 
-    void createCommandBuffer() {
+    void createCommandBuffers() {
+        commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+
         VkCommandBufferAllocateInfo allocInfo{}; // 不是CreateInfo
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = commandPool;
         // PRIMARY 一级队列，直接提交，不能够被其他的command buffer调用
         // SECDONDARY 不能直接提交，能够被其他队列调用
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = 1;
+        allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
-        if (VK_SUCCESS != vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer)) {
+        if (VK_SUCCESS != vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data())) {
             throw std::runtime_error("failed to create command buffers!");
         }
     }
@@ -869,6 +872,10 @@ private:
     }
 
     void createSyncObjects() {
+        imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -876,32 +883,36 @@ private:
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // 防止一开始unsigned导致无限卡死
 
-        if (
-            VK_SUCCESS != vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) ||
-            VK_SUCCESS != vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) ||
-            VK_SUCCESS != vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence)
-        ) {
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+          ;
+          if (VK_SUCCESS != vkCreateSemaphore(device, &semaphoreInfo, nullptr,
+                                              &imageAvailableSemaphores[i]) ||
+              VK_SUCCESS != vkCreateSemaphore(device, &semaphoreInfo, nullptr,
+                                              &renderFinishedSemaphores[i]) ||
+              VK_SUCCESS !=
+                  vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i])) {
             throw std::runtime_error("failed to create semaphores!");
+          }
         }
     }
 
     void drawFrame() {
-        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-        vkResetFences(device, 1, &inFlightFence);
+        vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+        vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
         uint32_t imageIndex;
         vkAcquireNextImageKHR(device, swapChain, UINT64_MAX,
-                              imageAvailableSemaphore, VK_NULL_HANDLE,
+                              imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE,
                               &imageIndex); // 当获取到图像之后，将会释放信号imageAvailableSemaphore
 
         // 写入commandBuffer
-        vkResetCommandBuffer(commandBuffer, 0);
-        recordCommandBuffer(commandBuffer, imageIndex);
+        vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+        recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
         // 提交commandBuffer
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphore}; // 这个缓冲区等待的信号量
+        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]}; // 这个缓冲区等待的信号量
         // 具体在等待什么资源，Vulkan可以针对性地提升并行度，也就是说在什么位置放信号量
         VkPipelineStageFlags waitStages[] =
             {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -910,22 +921,23 @@ private:
         submitInfo.pWaitDstStageMask = waitStages;
         // 指令缓冲
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
+        submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
         // 释放信号
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
         // 完成渲染之后，就可以交给显示系统去显示了
-        if (VK_SUCCESS != vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence)) {
-            throw std::runtime_error("failed to submit draw command buffer!");
+        if (VK_SUCCESS != vkQueueSubmit(graphicsQueue, 1, &submitInfo,
+                                        inFlightFences[currentFrame])) {
+          throw std::runtime_error("failed to submit draw command buffer!");
         }
 
         // 显示
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
+        presentInfo.pWaitSemaphores = &renderFinishedSemaphores[currentFrame];
         VkSwapchainKHR swapChains[] = {swapChain};
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapChains;
@@ -933,6 +945,8 @@ private:
         presentInfo.pResults = nullptr;
 
         vkQueuePresentKHR(graphicsQueue, &presentInfo);
+
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     void mainLoop() {
@@ -945,9 +959,11 @@ private:
     }
 
     void cleanup() {
-        vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-        vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-        vkDestroyFence(device, inFlightFence, nullptr);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            vkDestroyFence(device, inFlightFences[i], nullptr);
+        }
         vkDestroyCommandPool(device, commandPool, nullptr);
         for (auto framebuffer : swapChainFramebuffers) {
             vkDestroyFramebuffer(device, framebuffer, nullptr);
@@ -1021,11 +1037,12 @@ private:
     std::vector<VkFramebuffer> swapChainFramebuffers; // 使用framebuffer对imageview进行操作
 
     VkCommandPool commandPool;
-    VkCommandBuffer commandBuffer;
+    uint32_t currentFrame = 0;
+    std::vector<VkCommandBuffer> commandBuffers;
 
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
-    VkFence inFlightFence;
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+    std::vector<VkFence> inFlightFences;
 };
 
 int main() {
