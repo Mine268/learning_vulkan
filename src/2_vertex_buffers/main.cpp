@@ -846,21 +846,24 @@ private:
         }
     }
 
-    void createVertexBuffer() {
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                      VkDeviceMemory &bufferMemory)
+    {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = sizeof(vertices[0]) * vertices.size();
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // buffer使用时只能由一个队列独享
 
-        if (VK_SUCCESS != vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer)) {
-            throw std::runtime_error("failed to create vertex buffer!");
+        if (VK_SUCCESS != vkCreateBuffer(device, &bufferInfo, nullptr, &buffer)) {
+            throw std::runtime_error("failed to create buffer!");
         }
 
         // 申请合适的内存用于放置buffer
         VkMemoryRequirements memRequirements;
-        // 大小、对齐方式和内存类型
-        vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+        // 从支持的内存中找到符合buffer usage的，大小、对齐方式和内存类型
+        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
         // 准备申请内存
         VkMemoryAllocateInfo allocInfo{};
@@ -868,23 +871,91 @@ private:
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = findMemoryType(
             memRequirements.memoryTypeBits, // 需要满足内存需求
-            // CPU可见且可修改
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+            properties // 从满足要求的内存中找出具有指定属性的
         );
 
         // 申请内存
-        if (VK_SUCCESS != vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory)) {
-            throw std::runtime_error("failed to allocate vertex buffer memory!");
+        if (VK_SUCCESS != vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory)) {
+            throw std::runtime_error("failed to allocate buffer memory!");
         }
 
         // 重要：将申请下来的缓冲区和逻辑的缓冲VkBuffer关联
-        vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+        vkBindBufferMemory(device, buffer, bufferMemory, 0);
+    }
 
-        // 将数据传输到GPU buffer
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+        // 这个函数用于将staging buffer的内容传输到vertex buffer
+        // 这里是使用transfer queue实现的
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = commandPool; // 图形指令池支持transfer命令，所以不用创建新的指令池
+        allocInfo.commandBufferCount = 1;
+
+        // 创建零时的指令缓冲区，记录并提交buffer复制命令
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        // 该指令缓冲区只使用一次，且需要等待其执行完成
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        // 执行复制命令
+        VkBufferCopy copyRegin{};
+        copyRegin.srcOffset = 0;
+        copyRegin.dstOffset = 0;
+        copyRegin.size = size;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegin);
+
+        // 结束
+        vkEndCommandBuffer(commandBuffer);
+
+        // 直接提交
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue);
+
+        // 最后释放指令缓冲区
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+    }
+
+    void createVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+        // staging buffer用于接受CPU的数据，然后通过transfer队列将数据传输到GPU的Vertex buffer，提升效率
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     stagingBuffer, stagingBufferMemory);
+
+        // 将数据传输到staging buffer
         void* data;
-        vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-        memcpy(data, vertices.data(), (size_t) bufferInfo.size);
-        vkUnmapMemory(device, vertexBufferMemory);
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        // 现在vertex buffer要求是transfer的target，而且只用在GPU上就行了
+        createBuffer(bufferSize,
+                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer,
+                     vertexBufferMemory);
+
+        // 将数据传输过去
+        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+
+        // 之后staging buffer就不需要了
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -951,6 +1022,7 @@ private:
         // 绑定顶点缓冲区
         VkBuffer buffers[] = {vertexBuffer};
         VkDeviceSize offsets[] = {0};
+        // 注意第二个参数0，这个0就是指bindings的索引起始，在这一条命令Vulkan将实际的buffer与bindings索引关联
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
 
         // 动态viewport
