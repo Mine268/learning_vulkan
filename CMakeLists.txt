@@ -36,3 +36,6 @@ add_subdirectory("src/1_drawing_a_triangle")
 
 # 2. vertex buffers
 add_subdirectory("src/2_vertex_buffers")
+
+# 3. uniform buffers
+add_subdirectory("src/3_uniform_buffers")
