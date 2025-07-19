@@ -39,3 +39,6 @@ add_subdirectory("src/2_vertex_buffers")
 
 # 3. uniform buffers
 add_subdirectory("src/3_uniform_buffers")
+
+# 4. texture mappings
+add_subdirectory("src/4_texture_mappings")
