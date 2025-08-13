@@ -25,6 +25,9 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("third_party/glfw-3.4/")
 
+# stb_image
+include_directories("third_party/stb")
+
 # glm
 add_subdirectory("third_party/glm-1.0.1/")
 
