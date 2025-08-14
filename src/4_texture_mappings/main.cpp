@@ -175,7 +175,7 @@ private:
         createCommandPool();
         createTextureImage();
         createTextureImageView();
-        // createTextureSampler();
+        createTextureSampler();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -329,7 +329,14 @@ private:
                 !swapChainSupport.presentModes.empty();
         }
 
-        return indices.isComplete() && extensionSupported && swapChainAdequate;
+        VkPhysicalDeviceFeatures supportedFeatures;
+        vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+        return
+            indices.isComplete() &&
+            extensionSupported &&
+            swapChainAdequate &&
+            supportedFeatures.samplerAnisotropy; // 是否支持各向异性采样
     }
 
     bool isDeviceExtensionSupport(VkPhysicalDevice device) {
@@ -397,6 +404,7 @@ private:
 
         // 设备特征信息指定逻辑设备需要包含的功能，如着色器等
         VkPhysicalDeviceFeatures deviceFeatures{};
+        deviceFeatures.samplerAnisotropy = VK_TRUE; // 开启设备的各向异性采样功能
 
         // 创建逻辑设备
         VkDeviceCreateInfo createInfo{};
@@ -1166,6 +1174,33 @@ private:
         textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB);
     }
 
+    void createTextureSampler() {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR; // 如何过采样
+        samplerInfo.minFilter = VK_FILTER_LINEAR; // 如何降采样
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // 采样超界处理
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.anisotropyEnable = VK_TRUE; // 开启各向异性
+        // 获取设备允许的各向异性最大采样数量
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+        samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // 裁切模式填充值
+        samplerInfo.unnormalizedCoordinates = VK_FALSE; // 归一化坐标
+        samplerInfo.compareEnable = VK_FALSE; // 对材质像素值进行对比过滤
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.mipLodBias = 0.0f;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = 0.0f;
+
+        if (VK_SUCCESS != vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler)) {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
+    }
+
     void createVertexBuffer() {
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
@@ -1558,7 +1593,7 @@ private:
         }
         vkDestroyCommandPool(device, commandPool, nullptr);
         cleanupSwapChain();
-        // vkDestroySampler(device, textureSampler, nullptr);
+        vkDestroySampler(device, textureSampler, nullptr);
         vkDestroyImageView(device, textureImageView, nullptr);
         vkDestroyImage(device, textureImage, nullptr);
         vkFreeMemory(device, textureImageMemory, nullptr);
