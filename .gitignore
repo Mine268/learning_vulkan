@@ -2,6 +2,7 @@
 .vscode/
 build/
 third_party/
+'
 
 CMakeLists.txt.user
 CMakeCache.txt
