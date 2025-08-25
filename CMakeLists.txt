@@ -45,3 +45,6 @@ add_subdirectory("src/3_uniform_buffers")
 
 # 4. texture mappings
 add_subdirectory("src/4_texture_mappings")
+
+# 5. depth buffering
+add_subdirectory("src/5_depth_buffering")
