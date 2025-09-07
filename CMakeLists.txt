@@ -48,3 +48,6 @@ add_subdirectory("src/4_texture_mappings")
 
 # 5. depth buffering
 add_subdirectory("src/5_depth_buffering")
+
+# 6. loading models
+add_subdirectory("src/6_loading_models")
