@@ -28,6 +28,9 @@ add_subdirectory("third_party/glfw-3.4/")
 # stb_image
 include_directories("third_party/stb")
 
+# tinyobjloader
+include_directories("third_party/tinyobjloader")
+
 # glm
 add_subdirectory("third_party/glm-1.0.1/")
 
