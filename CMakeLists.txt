@@ -54,3 +54,6 @@ add_subdirectory("src/5_depth_buffering")
 
 # 6. loading models
 add_subdirectory("src/6_loading_models")
+
+# 7. generating mipmaps
+add_subdirectory("src/7_generating_mipmaps")
