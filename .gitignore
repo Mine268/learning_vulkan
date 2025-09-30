@@ -57,3 +57,9 @@ CMakeUserPresets.json
 *.exe
 *.out
 *.app
+
+# Model files
+!**/models/*.obj
+!**/models/**/*.obj
+!**/models/*.mtl
+!**/models/**/*.mtl
