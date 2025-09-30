@@ -57,3 +57,6 @@ add_subdirectory("src/6_loading_models")
 
 # 7. generating mipmaps
 add_subdirectory("src/7_generating_mipmaps")
+
+# 8. multisampling
+add_subdirectory("src/8_multisampling")
